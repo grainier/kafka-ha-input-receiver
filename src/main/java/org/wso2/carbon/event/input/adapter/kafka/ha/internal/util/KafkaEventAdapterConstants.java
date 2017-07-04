@@ -35,12 +35,11 @@ public final class KafkaEventAdapterConstants {
     public final static String ADAPTOR_SUSCRIBER_GROUP_ID = "group.id";
     public final static String ADAPTOR_SUSCRIBER_GROUP_ID_hint = "group.id.hint";
     public final static String ADAPTOR_SUSCRIBER_ZOOKEEPER_CONNECT = "bootstrap.servers";
-    public final static String ADAPTOR_SUSCRIBER_PARTITION_NO_LIST = "partition.no.list";
+    public final static String ADAPTOR_SUSCRIBER_FIRST_ZOOKEEPER_CONNECT = "zk.first.consumer";
+    public final static String ADAPTOR_SUSCRIBER_SECOND_ZOOKEEPER_CONNECT = "zk.second.consumer";
+    public final static String ADAPTOR_SUSCRIBER_PARTITION_NO = "partition.no.list";
     public final static String ADAPTOR_SUSCRIBER_ZOOKEEPER_CONNECT_HINT = "zookeeper.id.hint";
-    public final static String ADAPTOR_SUSCRIBER_THREADS = "threads";
-    public final static String ADAPTOR_SUSCRIBER_THREADS_HINT = "threads.hint";
     public final static String ADAPTOR_OPTIONAL_CONFIGURATION_PROPERTIES="optional.configuration";
     public final static String ADAPTOR_OPTIONAL_CONFIGURATION_PROPERTIES_HINT="optional.configuration.hint";
     public static final int AXIS_TIME_INTERVAL_IN_MILLISECONDS = 10000;
-
 }

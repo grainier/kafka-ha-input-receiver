@@ -51,6 +51,39 @@ public final class KafkaEventAdapter implements InputEventAdapter {
         this.globalProperties = globalProperties;
     }
 
+    private static Properties getConsumerProperties(String zookeeper, String groupId,
+                                                    String optionalConfigs) {
+        try {
+            Properties props = new Properties();
+            props.put(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_ZOOKEEPER_CONNECT, zookeeper);
+            props.put(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_GROUP_ID, groupId);
+            if (optionalConfigs != null) {
+                String[] optionalProperties = optionalConfigs.split(",");
+                for (String header : optionalProperties) {
+                    String[] configPropertyWithValue = header.split(":", 2);
+                    if (configPropertyWithValue.length == 2) {
+                        props.put(configPropertyWithValue[0], configPropertyWithValue[1]);
+                    } else {
+                        log.warn("Optional configuration property not defined in the correct format.\n" +
+                                "Required - property_name1:property_value1,property_name2:property_value2\n" +
+                                "Found - " + optionalConfigs);
+                    }
+                }
+            }
+
+            //TODO Define as global properties
+            props.put("session.timeout.ms", "30000");
+            props.put("enable.auto.commit", "true");
+            props.put("auto.commit.interval.ms", "1000");
+            props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+            props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+            // props.put("partition.assignment.strategy", "range");
+            return props;
+        } catch (NoClassDefFoundError e) {
+            throw new InputEventAdapterRuntimeException("Cannot access Kafka context due to missing jars", e);
+        }
+    }
+
     @Override
     public void init(InputEventAdapterListener eventAdaptorListener) throws InputEventAdapterException {
         validateInputEventAdapterConfigurations();
@@ -72,7 +105,8 @@ public final class KafkaEventAdapter implements InputEventAdapter {
     public void disconnect() {
         if (consumerKafkaAdaptor != null) {
             consumerKafkaAdaptor.shutdown();
-            String topic = eventAdapterConfiguration.getProperties().get(KafkaEventAdapterConstants.ADAPTER_MESSAGE_TOPIC);
+            String topic = eventAdapterConfiguration.getProperties()
+                    .get(KafkaEventAdapterConstants.ADAPTER_MESSAGE_TOPIC);
             log.debug("Adapter " + eventAdapterConfiguration.getName() + " disconnected " + topic);
         }
     }
@@ -92,7 +126,8 @@ public final class KafkaEventAdapter implements InputEventAdapter {
 
     @Override
     public boolean isEventDuplicatedInCluster() {
-        return Boolean.parseBoolean(eventAdapterConfiguration.getProperties().get(EventAdapterConstants.EVENTS_DUPLICATED_IN_CLUSTER));
+        return Boolean.parseBoolean(eventAdapterConfiguration.getProperties()
+                .get(EventAdapterConstants.EVENTS_DUPLICATED_IN_CLUSTER));
     }
 
     @Override
@@ -101,69 +136,36 @@ public final class KafkaEventAdapter implements InputEventAdapter {
     }
 
     private void validateInputEventAdapterConfigurations() throws InputEventAdapterException {
-        String threadsProperty = eventAdapterConfiguration.getProperties().get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_THREADS);
+        String partitionProperty = eventAdapterConfiguration.getProperties()
+                .get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_PARTITION_NO);
         try {
-            Integer.parseInt(threadsProperty);
+            Integer.parseInt(partitionProperty);
         } catch (NumberFormatException e) {
-            throw new InputEventAdapterException("Invalid value set for property 'Threads': " + threadsProperty, e);
+            throw new InputEventAdapterException("Invalid value set for property 'Partition No': " +
+                    partitionProperty, e);
         }
     }
 
-    private void createKafkaAdaptorListener(
-            InputEventAdapterListener inputEventAdapterListener,
-            InputEventAdapterConfiguration inputEventAdapterConfiguration) {
+    private void createKafkaAdaptorListener(InputEventAdapterListener inputEventAdapterListener,
+                                            InputEventAdapterConfiguration inputEventAdapterConfiguration) {
 
         Map<String, String> brokerProperties = new HashMap<String, String>();
         brokerProperties.putAll(inputEventAdapterConfiguration.getProperties());
-        String zkConnect = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_ZOOKEEPER_CONNECT);
+        String zkConnect1 = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_FIRST_ZOOKEEPER_CONNECT);
+        String zkConnect2 = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_SECOND_ZOOKEEPER_CONNECT);
         String groupID = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_GROUP_ID);
-        String threadsStr = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_THREADS);
-        String partitionNoList = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_PARTITION_NO_LIST);
+        String partition = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_PARTITION_NO);
         String optionalConfiguration = brokerProperties.get(KafkaEventAdapterConstants.ADAPTOR_OPTIONAL_CONFIGURATION_PROPERTIES);
-        int threads = Integer.parseInt(threadsStr);
-
         String topic = inputEventAdapterConfiguration.getProperties().get(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_TOPIC);
 
-        consumerKafkaAdaptor = new ConsumerKafkaAdaptor(topic, partitionNoList, tenantId,
-                                                        KafkaEventAdapter.getConsumerProperties(zkConnect, groupID, optionalConfiguration), inputEventAdapterConfiguration.getName());
-        consumerKafkaAdaptor.run(threads, inputEventAdapterListener);
+        consumerKafkaAdaptor = new ConsumerKafkaAdaptor(
+                topic,
+                partition,
+                tenantId,
+                KafkaEventAdapter.getConsumerProperties(zkConnect1, groupID, optionalConfiguration),
+                KafkaEventAdapter.getConsumerProperties(zkConnect2, groupID, optionalConfiguration),
+                inputEventAdapterConfiguration.getName()
+        );
+        consumerKafkaAdaptor.run(1, inputEventAdapterListener);
     }
-
-    private static Properties getConsumerProperties(String zookeeper, String groupId,
-                                                    String optionalConfigs) {
-        try {
-            Properties props = new Properties();
-            props.put(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_ZOOKEEPER_CONNECT, zookeeper);
-            props.put(KafkaEventAdapterConstants.ADAPTOR_SUSCRIBER_GROUP_ID, groupId);
-
-            if (optionalConfigs != null) {
-                String[] optionalProperties = optionalConfigs.split(",");
-
-                if (optionalProperties != null) {
-                    for (String header : optionalProperties) {
-                        String[] configPropertyWithValue = header.split(":", 2);
-                        if (configPropertyWithValue.length == 2) {
-                            props.put(configPropertyWithValue[0], configPropertyWithValue[1]);
-                        } else {
-                            log.warn("Optional configuration property not defined in the correct format.\nRequired - property_name1:property_value1,property_name2:property_value2\nFound - " + optionalConfigs);
-                        }
-                    }
-                }
-            }
-
-            //TODO Define as global properties
-
-            props.put("session.timeout.ms", "30000");
-            props.put("enable.auto.commit", "true");
-            props.put("auto.commit.interval.ms", "1000");
-            props.put("key.deserializer","org.apache.kafka.common.serialization.StringDeserializer");
-            props.put("value.deserializer","org.apache.kafka.common.serialization.StringDeserializer");
-//            props.put("partition.assignment.strategy", "range");
-
-            return props;
-        } catch (NoClassDefFoundError e) {
-            throw new InputEventAdapterRuntimeException("Cannot access kafka10 context due to missing jars", e);
-        }
-    }
-
 }

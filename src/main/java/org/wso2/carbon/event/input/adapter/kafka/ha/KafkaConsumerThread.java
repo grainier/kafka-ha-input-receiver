@@ -27,40 +27,41 @@ import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.event.input.adapter.core.InputEventAdapterListener;
 import org.wso2.siddhi.core.SiddhiEventOffsetHolder;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Collections;
 import java.util.Properties;
 
 
 public class KafkaConsumerThread implements Runnable {
-
-    private KafkaConsumer<byte[], byte[]> consumer = null;
+    private KafkaConsumer<byte[], byte[]> firstConsumer = null;
+    private KafkaConsumer<byte[], byte[]> secondConsumer = null;
     private InputEventAdapterListener brokerListener;
     private int tenantId;
     private String receiverName;
-    private TopicPartition partition;
     private Log log = LogFactory.getLog(KafkaConsumerThread.class);
 
     public KafkaConsumerThread(InputEventAdapterListener inBrokerListener, int tenantId, String topic,
-                               String partitionList, Properties props, String receiverName) {
-
+                               String partition, Properties firstConsumerProps, Properties secondConsumerProps,
+                               String receiverName) {
         try {
-            this.consumer = new KafkaConsumer<>(props);
             this.brokerListener = inBrokerListener;
             this.tenantId = tenantId;
             this.receiverName = receiverName;
-            String partitions[] = partitionList.split(",");
-            List<TopicPartition> partitionsList = new ArrayList<>();
-            for (String partition1 : partitions) {
-                partition = new TopicPartition(topic, Integer.parseInt(partition1));
-                partitionsList.add(partition);
-            }
-            consumer.assign(partitionsList);
+            TopicPartition topicPartition = new TopicPartition(topic, Integer.parseInt(partition));
+
+            // TODO: seek logic
+            this.firstConsumer = new KafkaConsumer<>(firstConsumerProps);
+            firstConsumer.assign(Collections.singletonList(topicPartition));
             Long lastOffset = SiddhiEventOffsetHolder.getLastEventOffset(receiverName);
-            if(lastOffset != null){
-                consumer.seek(partition, lastOffset);
+            if (lastOffset != null) {
+                firstConsumer.seek(topicPartition, lastOffset);
             }
 
+            this.secondConsumer = new KafkaConsumer<>(secondConsumerProps);
+            secondConsumer.assign(Collections.singletonList(topicPartition));
+            lastOffset = SiddhiEventOffsetHolder.getLastEventOffset(receiverName);
+            if (lastOffset != null) {
+                secondConsumer.seek(topicPartition, lastOffset);
+            }
         } catch (Throwable t) {
             log.error(t);
         }
@@ -73,14 +74,26 @@ public class KafkaConsumerThread implements Runnable {
                 PrivilegedCarbonContext.startTenantFlow();
                 PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantId(tenantId);
 
-                ConsumerRecords<byte[], byte[]> records = consumer.poll(200);
-                for (ConsumerRecord record : records) {
+                ConsumerRecords<byte[], byte[]> firstConsumerRecords = firstConsumer.poll(200);
+                for (ConsumerRecord record : firstConsumerRecords) {
                     String event = record.value().toString();
                     SiddhiEventOffsetHolder.putEventOffset(receiverName, record.offset());
-                    log.info("Offset : "+record.offset());
+                    log.info("Consumer 1 Offset : " + record.offset());
                     if (log.isDebugEnabled()) {
                         log.debug("Event received in Kafka Event Adaptor: " + event + ", offSet: " +
-                                  record.offset() + ", key: " + record.key() + ", partition: " + record.partition());
+                                record.offset() + ", key: " + record.key() + ", topicPartition: " + record.partition());
+                    }
+                    brokerListener.onEvent(event);
+                }
+
+                ConsumerRecords<byte[], byte[]> secondConsumerRecords = secondConsumer.poll(200);
+                for (ConsumerRecord record : secondConsumerRecords) {
+                    String event = record.value().toString();
+                    SiddhiEventOffsetHolder.putEventOffset(receiverName, record.offset());
+                    log.info("Consumer 2 Offset : " + record.offset());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Event received in Kafka Event Adaptor: " + event + ", offSet: " +
+                                record.offset() + ", key: " + record.key() + ", topicPartition: " + record.partition());
                     }
                     brokerListener.onEvent(event);
                 }
@@ -92,7 +105,11 @@ public class KafkaConsumerThread implements Runnable {
         }
     }
 
-    public KafkaConsumer<byte[], byte[]> getConsumer() {
-        return consumer;
+    public KafkaConsumer<byte[], byte[]> getFirstConsumer() {
+        return firstConsumer;
+    }
+
+    public KafkaConsumer<byte[], byte[]> getSecondConsumer() {
+        return secondConsumer;
     }
 }

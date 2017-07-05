@@ -20,10 +20,13 @@ package org.wso2.carbon.event.input.adapter.kafka.ha;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.event.input.adapter.core.InputEventAdapterListener;
+import org.wso2.carbon.event.input.adapter.kafka.ha.internal.util.KafkaEventAdapterConstants;
 
 import java.util.Properties;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class ConsumerKafkaAdaptor {
     private final Properties firstConsumerProps;
@@ -33,7 +36,11 @@ public class ConsumerKafkaAdaptor {
     private int tenantId;
     private String partition;
     private String receiverName;
-    private KafkaConsumerThread kafkaConsumerThread;
+    private QueueConsumer queueConsumer;
+    private BlockingQueue<KafkaConsumerThread.Event> firstQueue;
+    private BlockingQueue<KafkaConsumerThread.Event> secondQueue;
+    private KafkaConsumerThread firstKafkaConsumerThread;
+    private KafkaConsumerThread secondKafkaConsumerThread;
     private Log log = LogFactory.getLog(ConsumerKafkaAdaptor.class);
 
     public ConsumerKafkaAdaptor(String inTopic, String partition, int tenantId,
@@ -45,12 +52,14 @@ public class ConsumerKafkaAdaptor {
         this.partition = partition;
         this.tenantId = tenantId;
         this.receiverName = receiverName;
+        this.firstQueue = new LinkedBlockingQueue<>();
+        this.secondQueue = new LinkedBlockingQueue<>();
     }
 
     public synchronized void shutdown() {
-        if (kafkaConsumerThread != null) {
-            kafkaConsumerThread.getFirstConsumer().close();
-            kafkaConsumerThread.getSecondConsumer().close();
+        if (firstKafkaConsumerThread != null) {
+            firstKafkaConsumerThread.getConsumer().close();
+            secondKafkaConsumerThread.getConsumer().close();
         }
 
         if (executor != null) {
@@ -60,13 +69,27 @@ public class ConsumerKafkaAdaptor {
 
     public void run(int numThreads, InputEventAdapterListener brokerListener) {
         try {
-            executor = Executors.newFixedThreadPool(numThreads);
-            this.kafkaConsumerThread = new KafkaConsumerThread(brokerListener, tenantId,
-                    topic, partition, firstConsumerProps, secondConsumerProps, receiverName);
-            executor.submit(kafkaConsumerThread);
+            executor = Executors.newFixedThreadPool(3);
+
+            this.firstKafkaConsumerThread = new KafkaConsumerThread(
+                    topic, partition, firstConsumerProps, KafkaEventAdapterConstants.FIRST_CONSUMER_OFFSET_KEY,
+                    receiverName, firstQueue);
+
+            this.secondKafkaConsumerThread = new KafkaConsumerThread(
+                    topic, partition, secondConsumerProps, KafkaEventAdapterConstants.SECOND_CONSUMER_OFFSET_KEY,
+                    receiverName, secondQueue);
+
+            this.queueConsumer = new QueueConsumer(brokerListener, tenantId, receiverName, firstQueue, secondQueue);
+
+            executor.submit(firstKafkaConsumerThread);
+            executor.submit(secondKafkaConsumerThread);
+            executor.submit(queueConsumer);
+
             log.info("Kafka Consumers started listening on topic: " + topic);
         } catch (Throwable t) {
             log.error("Error while creating KafkaConsumer ", t);
         }
+
     }
+
 }

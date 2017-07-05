@@ -25,7 +25,9 @@ import org.wso2.carbon.event.input.adapter.core.InputEventAdapterListener;
 import org.wso2.carbon.event.input.adapter.kafka.ha.internal.util.KafkaEventAdapterConstants;
 import org.wso2.siddhi.core.SiddhiEventOffsetHolder;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +37,7 @@ public class QueueConsumer implements Runnable {
     private BlockingQueue<KafkaConsumerThread.Event> firstQueue, secondQueue;
     private KafkaConsumerThread.Event e1, e2, last;
     private InputEventAdapterListener brokerListener;
+    private List<BlockingQueue<KafkaConsumerThread.Event>> faultyQueues;
     private String receiverName;
     private int tenantId;
     private Log log = LogFactory.getLog(QueueConsumer.class);
@@ -47,6 +50,7 @@ public class QueueConsumer implements Runnable {
         this.firstQueue = firstQueue;
         this.secondQueue = secondQueue;
         this.receiverName = receiverName;
+        this.faultyQueues = new ArrayList<>(2);
     }
 
     @Override
@@ -117,16 +121,31 @@ public class QueueConsumer implements Runnable {
     }
 
     private KafkaConsumerThread.Event poll(BlockingQueue<KafkaConsumerThread.Event> queue) {
+        boolean faultyQueue = faultyQueues.contains(queue);
         KafkaConsumerThread.Event event = null;
-        int retry = 0;
-        while (retry < MAX_RETRY_COUNT) {
-            try {
-                event = queue.poll(1000, TimeUnit.MILLISECONDS);
-                if (event != null) break;
-            } catch (InterruptedException e) {
-                // do nothing
+
+        if (faultyQueue) {
+            event = queue.poll();
+        } else {
+            int retry = 0;
+            while (retry < MAX_RETRY_COUNT) {
+                try {
+                    event = queue.poll(1000, TimeUnit.MILLISECONDS);
+                    if (event != null) break;
+                } catch (InterruptedException e) {
+                    // do nothing
+                }
+                retry++;
             }
-            retry++;
+        }
+
+        if (event == null && !faultyQueue) {
+            faultyQueues.add(queue);
+            log.warn(faultyQueues.size() + " of 2 Kafka receivers are not receiving any events.");
+        } else if (faultyQueue && event != null) {
+            faultyQueues.remove(queue);
+            log.info("Kafka receiver became active. " + (2 - faultyQueues.size()) + " of 2 Kafka receivers are" +
+                    " receiving events.");
         }
         return event;
     }

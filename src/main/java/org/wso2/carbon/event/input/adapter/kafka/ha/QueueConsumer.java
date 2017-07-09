@@ -143,6 +143,14 @@ public class QueueConsumer implements Runnable, SnapshotableElement {
         if (event == null && !faultyQueue) {
             faultyQueues.add(queue);
             LOG.warn(faultyQueues.size() + " of 2 Kafka receivers are not receiving any events.");
+
+            if (faultyQueues.size() > 1) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    // do nothing
+                }
+            }
         } else if (faultyQueue && event != null) {
             faultyQueues.remove(queue);
             LOG.info("Kafka receiver became active. " + (2 - faultyQueues.size()) + " of 2 Kafka receivers are" +

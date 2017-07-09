@@ -23,7 +23,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
-import org.wso2.siddhi.core.SiddhiEventOffsetHolder;
+import org.wso2.siddhi.core.SnapshotableElementsHolder;
 
 import java.util.Collections;
 import java.util.Map;
@@ -36,25 +36,25 @@ import java.util.regex.Pattern;
 public class KafkaConsumerThread implements Runnable {
     private static final Pattern EVENT_PATTERN = Pattern.compile("^(.*)_(\\d+)_(\\d+)_(.*)$");
     private KafkaConsumer<byte[], byte[]> consumer = null;
-    private String receiverName;
+    private String queueId;
     private BlockingQueue<Event> recordQueue;
-    private String offsetKey;
     private Log log = LogFactory.getLog(KafkaConsumerThread.class);
 
-    public KafkaConsumerThread(String topic, String partition, Properties consumerProps, String offsetKey,
-                               String receiverName, BlockingQueue<Event> recordQueue) {
+    public KafkaConsumerThread(String receiverName, String topic, String partition, Properties consumerProps,
+                               String queueId, BlockingQueue<Event> recordQueue) {
         try {
-            this.receiverName = receiverName;
             this.recordQueue = recordQueue;
-            this.offsetKey = offsetKey;
+            this.queueId = queueId;
             TopicPartition topicPartition = new TopicPartition(topic, Integer.parseInt(partition));
             this.consumer = new KafkaConsumer<>(consumerProps);
             consumer.assign(Collections.singletonList(topicPartition));
 
-            Map<String, Object> offsetInfo = SiddhiEventOffsetHolder.getLastEventOffset(receiverName);
-            if (offsetInfo != null) {
-                if (offsetInfo.get(offsetKey) != null)
-                    consumer.seek(topicPartition, (Long) offsetInfo.get(offsetKey));
+            Map<String, Object> existingState = SnapshotableElementsHolder.getState(receiverName);
+            if (existingState != null) {
+                Object existingOffset = existingState.get(queueId);
+                if (existingOffset != null) {
+                    consumer.seek(topicPartition, (Long) existingOffset);
+                }
             }
         } catch (Throwable t) {
             log.error(t);
@@ -72,7 +72,7 @@ public class KafkaConsumerThread implements Runnable {
                                 ", offSet: " + record.offset() + ", key: " + record.key() + ", topicPartition: " +
                                 record.partition());
                     }
-                    recordQueue.add(new Event(record.value().toString(), offsetKey, record.offset()));
+                    recordQueue.add(new Event(record.value().toString(), queueId, record.offset()));
                 }
             } catch (Throwable t) {
                 log.error("Error while consuming event " + t);
@@ -88,11 +88,11 @@ public class KafkaConsumerThread implements Runnable {
         private String publisher;
         private Long timestamp;
         private Long sequence;
-        private String offsetKey;
+        private String queueId;
         private String event;
         private long offset;
 
-        Event(String eventString, String offsetKey, long offset) {
+        Event(String eventString, String queueId, long offset) {
             Matcher matcher = EVENT_PATTERN.matcher(eventString);
             while (matcher.find()) {
                 publisher = matcher.group(1);
@@ -100,7 +100,7 @@ public class KafkaConsumerThread implements Runnable {
                 sequence = Long.valueOf(matcher.group(3));
                 event = matcher.group(4);
             }
-            this.offsetKey = offsetKey;
+            this.queueId = queueId;
             this.offset = offset;
         }
 
@@ -128,8 +128,8 @@ public class KafkaConsumerThread implements Runnable {
             return timestamp + "_" + sequence;
         }
 
-        public String getOffsetKey() {
-            return offsetKey;
+        public String getQueueId() {
+            return queueId;
         }
 
         @Override

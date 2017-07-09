@@ -67,17 +67,15 @@ public class ConsumerKafkaAdaptor {
         }
     }
 
-    public void run(int numThreads, InputEventAdapterListener brokerListener) {
+    public void run(InputEventAdapterListener brokerListener) {
         try {
             executor = Executors.newFixedThreadPool(3);
 
-            this.firstKafkaConsumerThread = new KafkaConsumerThread(
-                    topic, partition, firstConsumerProps, KafkaEventAdapterConstants.FIRST_CONSUMER_OFFSET_KEY,
-                    receiverName, firstQueue);
+            this.firstKafkaConsumerThread = new KafkaConsumerThread(receiverName, topic, partition,
+                    firstConsumerProps, KafkaEventAdapterConstants.FIRST_CONSUMER_QUEUE_KEY, firstQueue);
 
-            this.secondKafkaConsumerThread = new KafkaConsumerThread(
-                    topic, partition, secondConsumerProps, KafkaEventAdapterConstants.SECOND_CONSUMER_OFFSET_KEY,
-                    receiverName, secondQueue);
+            this.secondKafkaConsumerThread = new KafkaConsumerThread(receiverName, topic, partition,
+                    secondConsumerProps, KafkaEventAdapterConstants.SECOND_CONSUMER_QUEUE_KEY, secondQueue);
 
             this.queueConsumer = new QueueConsumer(brokerListener, tenantId, receiverName, firstQueue, secondQueue);
 

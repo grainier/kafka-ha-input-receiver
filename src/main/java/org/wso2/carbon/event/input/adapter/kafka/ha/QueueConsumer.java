@@ -23,7 +23,8 @@ import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.event.input.adapter.core.InputEventAdapterListener;
 import org.wso2.carbon.event.input.adapter.kafka.ha.internal.util.KafkaEventAdapterConstants;
-import org.wso2.siddhi.core.SiddhiEventOffsetHolder;
+import org.wso2.siddhi.core.SnapshotableElementsHolder;
+import org.wso2.siddhi.core.util.snapshot.SnapshotableElement;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,15 +33,16 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-public class QueueConsumer implements Runnable {
+public class QueueConsumer implements Runnable, SnapshotableElement {
     private static final int MAX_RETRY_COUNT = 10;
     private BlockingQueue<KafkaConsumerThread.Event> firstQueue, secondQueue;
     private KafkaConsumerThread.Event e1, e2, last;
     private InputEventAdapterListener brokerListener;
     private List<BlockingQueue<KafkaConsumerThread.Event>> faultyQueues;
+    private Map<String, Object> stateInfo;
     private String receiverName;
     private int tenantId;
-    private Log log = LogFactory.getLog(QueueConsumer.class);
+    private Log LOG = LogFactory.getLog(QueueConsumer.class);
 
     public QueueConsumer(InputEventAdapterListener inBrokerListener, int tenantId, String receiverName,
                          BlockingQueue<KafkaConsumerThread.Event> firstQueue,
@@ -51,6 +53,8 @@ public class QueueConsumer implements Runnable {
         this.secondQueue = secondQueue;
         this.receiverName = receiverName;
         this.faultyQueues = new ArrayList<>(2);
+        this.stateInfo = new HashMap<String, Object>();
+        SnapshotableElementsHolder.registerSnapshotableElement(this);
     }
 
     @Override
@@ -101,22 +105,19 @@ public class QueueConsumer implements Runnable {
                 brokerListener.onEvent(event.getEvent());
                 last = event;
             }
-
         } catch (Throwable t) {
-            log.error("Error while consuming event : " + event, t);
+            LOG.error("Error while consuming event : " + event, t);
         } finally {
             PrivilegedCarbonContext.endTenantFlow();
         }
     }
 
     private void ack(KafkaConsumerThread.Event event) {
-        if (event != null && last != null) {
-            Map<String, Object> offsetInfo = (SiddhiEventOffsetHolder.getLastEventOffset(receiverName) != null) ?
-                    SiddhiEventOffsetHolder.getLastEventOffset(receiverName) :
-                    new HashMap<String, Object>();
-            offsetInfo.put(event.getOffsetKey(), event.getOffset());
-            offsetInfo.put(KafkaEventAdapterConstants.LAST_EVENT_ID_KEY, last.getId());
-            SiddhiEventOffsetHolder.putEventOffset(receiverName, offsetInfo);
+        if (event != null) {
+            stateInfo.put(event.getQueueId(), event.getOffset());
+        }
+        if (last != null) {
+            stateInfo.put(KafkaEventAdapterConstants.LAST_EVENT_ID_KEY, last.getId());
         }
     }
 
@@ -141,23 +142,36 @@ public class QueueConsumer implements Runnable {
 
         if (event == null && !faultyQueue) {
             faultyQueues.add(queue);
-            log.warn(faultyQueues.size() + " of 2 Kafka receivers are not receiving any events.");
+            LOG.warn(faultyQueues.size() + " of 2 Kafka receivers are not receiving any events.");
         } else if (faultyQueue && event != null) {
             faultyQueues.remove(queue);
-            log.info("Kafka receiver became active. " + (2 - faultyQueues.size()) + " of 2 Kafka receivers are" +
+            LOG.info("Kafka receiver became active. " + (2 - faultyQueues.size()) + " of 2 Kafka receivers are" +
                     " receiving events.");
         }
         return event;
     }
 
-    private void updateOffsetMeta(String key, Object value) {
-        Map<String, Object> offsetInfo = (SiddhiEventOffsetHolder.getLastEventOffset(receiverName) != null) ?
-                SiddhiEventOffsetHolder.getLastEventOffset(receiverName) :
-                new HashMap<String, Object>();
-        offsetInfo.put(key, value);
-        offsetInfo.put(KafkaEventAdapterConstants.LAST_EVENT_ID_KEY, last.getId());
-        SiddhiEventOffsetHolder.putEventOffset(receiverName, offsetInfo);
+    @Override
+    public Map<String, Object> currentState() {
+        return stateInfo;
     }
 
+    @Override
+    public void restoreState(Map<String, Object> state) {
+        LOG.info("************ restoreState ************");
+        LOG.info("restoreState: " + state);
+        stateInfo = state;
+    }
+
+    @Override
+    public void onSave(Map<String, Object> state) {
+        LOG.info("************ onSaveTriggered ************");
+        LOG.info("onSaveState: " + state);
+    }
+
+    @Override
+    public String getElementId() {
+        return receiverName;
+    }
 
 }

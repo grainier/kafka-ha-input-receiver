@@ -29,7 +29,6 @@ import org.wso2.carbon.event.input.adapter.core.exception.InputEventAdapterExcep
 import org.wso2.carbon.event.input.adapter.core.exception.InputEventAdapterRuntimeException;
 import org.wso2.carbon.event.input.adapter.core.exception.TestConnectionNotSupportedException;
 import org.wso2.carbon.event.input.adapter.kafka.ha.internal.util.KafkaEventAdapterConstants;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -37,18 +36,20 @@ import java.util.UUID;
 
 public final class KafkaEventAdapter implements InputEventAdapter {
 
-    private static final Log log = LogFactory.getLog(KafkaEventAdapter.class);
+    private static final Log LOG = LogFactory.getLog(KafkaEventAdapter.class);
     private final InputEventAdapterConfiguration eventAdapterConfiguration;
     private final Map<String, String> globalProperties;
     private final String id = UUID.randomUUID().toString();
     private InputEventAdapterListener eventAdaptorListener;
     private int tenantId;
+    private String receiverName;
     private ConsumerKafkaAdaptor consumerKafkaAdaptor;
 
     public KafkaEventAdapter(InputEventAdapterConfiguration eventAdapterConfiguration,
                              Map<String, String> globalProperties) {
         this.eventAdapterConfiguration = eventAdapterConfiguration;
         this.globalProperties = globalProperties;
+        this.receiverName = eventAdapterConfiguration.getName();
     }
 
     private static Properties getConsumerProperties(String zookeeper, String groupId,
@@ -64,7 +65,7 @@ public final class KafkaEventAdapter implements InputEventAdapter {
                     if (configPropertyWithValue.length == 2) {
                         props.put(configPropertyWithValue[0], configPropertyWithValue[1]);
                     } else {
-                        log.warn("Optional configuration property not defined in the correct format.\n" +
+                        LOG.warn("Optional configuration property not defined in the correct format.\n" +
                                 "Required - property_name1:property_value1,property_name2:property_value2\n" +
                                 "Found - " + optionalConfigs);
                     }
@@ -107,7 +108,7 @@ public final class KafkaEventAdapter implements InputEventAdapter {
             consumerKafkaAdaptor.shutdown();
             String topic = eventAdapterConfiguration.getProperties()
                     .get(KafkaEventAdapterConstants.ADAPTER_MESSAGE_TOPIC);
-            log.debug("Adapter " + eventAdapterConfiguration.getName() + " disconnected " + topic);
+            LOG.debug("Adapter " + eventAdapterConfiguration.getName() + " disconnected " + topic);
         }
     }
 
@@ -166,6 +167,6 @@ public final class KafkaEventAdapter implements InputEventAdapter {
                 KafkaEventAdapter.getConsumerProperties(zkConnect2, groupID, optionalConfiguration),
                 inputEventAdapterConfiguration.getName()
         );
-        consumerKafkaAdaptor.run(1, inputEventAdapterListener);
+        consumerKafkaAdaptor.run(inputEventAdapterListener);
     }
 }

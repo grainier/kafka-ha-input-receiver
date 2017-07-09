@@ -30,8 +30,8 @@ public final class KafkaEventAdapterConstants {
     public static final int ADAPTER_EXECUTOR_JOB_QUEUE_SIZE = 10000;
     public static final long DEFAULT_KEEP_ALIVE_TIME = 20;
 
-    public static final String FIRST_CONSUMER_OFFSET_KEY = "first.consumer.offset";
-    public static final String SECOND_CONSUMER_OFFSET_KEY = "second.consumer.offset";
+    public static final String FIRST_CONSUMER_QUEUE_KEY = "first.consumer.queue";
+    public static final String SECOND_CONSUMER_QUEUE_KEY = "second.consumer.queue";
     public static final String LAST_EVENT_ID_KEY = "last.event.id";
 
     public final static String ADAPTOR_TYPE_KAFKA = "kafkaHA";

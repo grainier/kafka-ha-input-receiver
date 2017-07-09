@@ -29,12 +29,9 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 public class KafkaConsumerThread implements Runnable {
-    private static final Pattern EVENT_PATTERN = Pattern.compile("^(.*)_(\\d+)_(\\d+)_(.*)$");
     private KafkaConsumer<byte[], byte[]> consumer = null;
     private String queueId;
     private BlockingQueue<Event> recordQueue;
@@ -85,7 +82,6 @@ public class KafkaConsumerThread implements Runnable {
     }
 
     class Event implements Comparable<Event> {
-        private String publisher;
         private Long timestamp;
         private Long sequence;
         private String queueId;
@@ -93,19 +89,13 @@ public class KafkaConsumerThread implements Runnable {
         private long offset;
 
         Event(String eventString, String queueId, long offset) {
-            Matcher matcher = EVENT_PATTERN.matcher(eventString);
-            while (matcher.find()) {
-                publisher = matcher.group(1);
-                timestamp = Long.valueOf(matcher.group(2));
-                sequence = Long.valueOf(matcher.group(3));
-                event = matcher.group(4);
-            }
+            int firstIndex = eventString.indexOf("_");
+            int secondIndex = eventString.indexOf("_", firstIndex + 1);
+            timestamp = Long.valueOf(eventString.substring(0, firstIndex));
+            sequence = Long.valueOf(eventString.substring(firstIndex + 1, secondIndex));
+            event = eventString.substring(secondIndex + 1);
             this.queueId = queueId;
             this.offset = offset;
-        }
-
-        public String getPublisher() {
-            return publisher;
         }
 
         public Long getTimestamp() {
